@@ -1,0 +1,711 @@
+---
+title: "İSTATİSTİKSEL YAZILIM FİNAL"
+author: "Melike Hilal SANCAKLI"
+        "Selin Nur GÜLTEKİN"
+        "Öykü URAL"
+        "Damla KILIÇ"
+        "Melida EKİCİ"
+date: "01 01 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Bu veri seti, 1990'dan 2009'a kadar olan 3.5 Milyon + ABD İç Hat Uçuşlarının bir kaydıdır. Dünyanın dört bir yanındaki farklı seyahat araçlarının geniş bir veri tabanına sahip  " OpenFlights "  web sitesinden alınmıştır.
+
+```{r}
+library(readr)
+Airports2 <- read_csv("Airports2.csv")
+View(Airports2)
+```
+
+```{r}
+summary(Airports2)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(fmsb)
+library(ggmap)
+library(sf)
+library(here)
+library("rnaturalearth")
+library("rnaturalearthdata")
+```
+
+
+
+Eksik değerler, verilerin analizinin sonuçlarında çok fazla fark yaratabilir. Verilerdeki eksik değerlerin sayısını görmek için bir çubuk grafik çizdim ve neyse ki bu veri kümesinde eksik değerler yok.
+
+```{r}
+library(sf)
+library(highcharter)
+library(timetk)
+library(kableExtra)
+as.data.frame(table(is.na(Airports2))) %>%
+  hchart('column',hcaes(Var1, Freq)) %>% hc_title(text = 'No. of Missing Values') %>%
+  hc_add_theme(hc_theme_google())
+```
+
+
+Değişkenlerin birbirine bağımlılığı gibi çoğu bilgi bu grafik aracılığıyla açıklayıcıdır. Bu grafik yukarıdaki grafiklerin bilgilerini özetler.
+```{r}
+library(dplyr)
+library(psych)
+pairs.panels(sample_n(Airports2,2000)[,c(5:8,10,11)])
+```
+
+
+
+```{r}
+library(lubridate)
+Airports2
+#Converting date attribute to date format
+Airports2$Fly_date <- as.character(Airports2$Fly_date)
+Airports2$Fly_date <- paste(Airports2$Fly_date, '01',sep = '')
+Airports2$Fly_date <- as.Date(Airports2$Fly_date, '%Y%m%d')
+
+#choosing less time for better performance
+
+
+Airports2$Origin_code <- sub('.*[, ]', '', Airports2$Origin_city)
+Airports2$Destination_code <- sub('.*[, ]', '', Airports2$Destination_city)
+```
+
+
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+Airports2 <- Airports2 %>% mutate(Year =year(Airports2$Fly_date))  # Obtain Year from the factor Fly_Date
+Airports2 <- Airports2[order(Airports2$Year),] # Sort by Year
+Airports3 <- filter(Airports2, Year %in% c(1990,2009))
+
+```
+
+Şimdi kutu grafikler üzerinden sayısal özelliklerimize bir göz atalım. Boxplotlar, aykırı değerleri ve beş sayı özeti gösterir.
+
+```{r}
+library(tidyverse)
+library(plotly)
+#Lets look at some box plots of the data
+temp <- sample_n(Airports2, 50000)
+
+plot_ly(type = 'box') %>%
+        add_boxplot(y = ~temp$Passengers, name = 'Passengers') %>%
+add_boxplot(
+        y = ~temp$Seats, name = 'Seats')
+```
+
+```{r}
+plot_ly(type= 'box') %>%
+add_boxplot(
+        y = ~temp$Flights, name = 'Uçuşlar')
+```
+
+```{r}
+plot_ly(type = 'box') %>%
+  add_boxplot( y = ~temp$Distance, name = 'Mesafe' )
+```
+
+
+```{r}
+plot_ly(type = 'box') %>%
+  add_boxplot(y = ~temp$Origin_population, name = 'Menşe Şehir Nüfusu') %>%
+  add_boxplot(y = ~temp$Destination_population, name = "Hedef şehir Nüfusu")
+```
+
+
+
+
+
+
+
+Yolcular
+Bu bölümde 1990 ve 2009'da her bir havalimanını ziyaret eden yolcu miktarını görselleştiriyoruz. Çok fazla havaalanı (+400) olduğu için her yıl sadece en çok ziyaret edilen 50 havalimanını göstereceğiz.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+# 1990
+Airports2 %>% filter(Passengers !=0, Year == 1990) %>% group_by(Origin_airport) %>% summarize(avg_Passengers = round(sum(Passengers),2)) %>% mutate(Ranking = rank(-avg_Passengers)) %>% mutate(Origin_airport = reorder(Origin_airport, Ranking)) %>% filter (Ranking <50) %>%  ggplot(aes(x = Origin_airport, y = avg_Passengers, color ="blue")) + geom_bar(stat = "identity" ) + theme(legend.position = "none", axis.text.x = element_text(angle = 90, hjust = 1)) +xlab("Havaalanlari") + ylab("Yolcu sayisi") + ggtitle("1990 yilinda en cok ziyaret edilen 50 havaalani")  
+```
+
+```{r}
+# 2009
+Airports2 %>% filter(Passengers !=0, Year == 2009) %>% group_by(Origin_airport) %>% summarize(avg_Passengers = round(sum(Passengers),2)) %>% mutate(Ranking = rank(-avg_Passengers)) %>% mutate(Origin_airport = reorder(Origin_airport, Ranking)) %>% filter (Ranking <50) %>%  ggplot(aes(x = Origin_airport, y = avg_Passengers,color ="red")) + geom_bar(stat = "identity" ) + theme(legend.position = "none", axis.text.x = element_text(angle = 90, hjust = 1)) +xlab("Havaalani") + ylab("Yolcular") + ggtitle("2009 yilinda en cok ziyaret edilen 50 havaalani")
+```
+1990'dan 2009'a kadar yolcu sayısının nasıl arttığını gözlemliyoruz, bu da daha fazla insanın hava taşımacılığına eriştiğini gösteriyor.
+
+Koltuk doluluk
+Bir diğer ilginç gösterge ise her uçuş için yolcu sayısı ve koltuk sayısı arasındaki ilişkidir. Bu göstergeyi Verimlilik olarak adlandırıyoruz: bu gösterge 1'e ne kadar yakınsa, neredeyse tüm koltuklar alındığında uçuş o kadar verimli oldu. 1990 ve 2009 yıllarında havalimanı başına ortalama verimliliği hesaplayarak, yalnızca en yüksek verime sahip 50 havalimanını görüyoruz.
+
+```{r}
+
+# 1990
+Airports2 %>% filter(Passengers !=0, Year == 1990) %>% group_by(Origin_airport) %>% summarize(Efficiency = round(mean(Passengers/Seats),2)) %>% mutate(Ranking = rank(-Efficiency)) %>% mutate(Origin_airport = reorder(Origin_airport, Ranking)) %>% filter (Ranking <50) %>%  ggplot(aes(x = Origin_airport, y = Efficiency, color = "Blue")) + geom_bar(stat = "identity" ) + theme(legend.position = "none", axis.text.x = element_text(angle = 90, hjust = 1)) +xlab("Havaalanlari") + ylab("Verim") + ggtitle("1990 yilinda en cok ziyaret edilen 50 havaalani")
+```
+
+
+```{r}
+# 2009
+Airports2 %>% filter(Passengers !=0, Year == 2009) %>% group_by(Origin_airport) %>% summarize(Efficiency = round(mean(Passengers/Seats),2)) %>% mutate(Ranking = rank(-Efficiency)) %>% mutate(Origin_airport = reorder(Origin_airport, Ranking)) %>% filter (Ranking <50) %>%  ggplot(aes(x = Origin_airport, y = Efficiency, color = "Blue")) + geom_bar(stat = "identity" ) + theme(legend.position = "none", axis.text.x = element_text(angle = 90, hjust = 1)) +xlab("Havaalanlari") + ylab("Verim") + ggtitle("2009 yilinda en cok ziyaret edilen 50 havaalani")
+```
+Verimliliğin 1990'dan 2009'a kadar nasıl arttığını, bazı durumlarda 1'e yaklaştığını görüyoruz. Bu, internetin varlığı nedeniyle mantıklıdır ve kullanıcıların uçuş rezervasyonu yapmasını kolaylaştırır. Sonuç olarak, havayolları her uçuşta boş koltuk sayısını önemli ölçüde azalttı.
+
+Ancak, her yıl sadece en etkili 50 havalimanını dikkate aldık. Tüm havaalanlarının nasıl davrandığını görmek için kutu grafikleri kullanmamız gerekiyor.
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+Airports3 <- Airports3 %>% filter(Passengers !=0, Seats !=0) %>% mutate(Efficiency = round(Passengers/Seats ,2)) %>% filter(Efficiency <= 1) # Compute Efficiency
+
+Airports3 %>%  mutate(Year = reorder(Year, Efficiency, FUN = median)) %>% ggplot(aes(x =Year, y = Efficiency, fill = Year)) + geom_boxplot() + ggtitle("Koltuk dolulukta verimlilik")
+```
+1990-2009 arasında koltuk doluluk verimliliğinde% 20'lik bir iyileşmeyi açıkça takdir edebiliriz. Bunu hesaplamanın başka bir yolu, yolcuların miktarı ile uçuş miktarı arasında bir dağılım grafiği kullanmaktır.
+
+
+
+```{r}
+Airports3 %>%mutate(Year = as.character(Year)) %>% ggplot(aes(x = Flights, y = Passengers, colour = Year)) + geom_point(alpha = 0.5) + ggtitle("Yolcular ve Ucuslar")
+```
+
+Beklendiği gibi, yolcu sayısı ile uçuş miktarı arasında açık bir ilişki vardır. 2009'da her uçuş için daha fazla yolcu olduğunu gösteren daha yüksek bir eğimi (Yolcular / Uçuşlar) takdir edebiliriz. Başka bir deyişle, önceki bölümde de gösterdiğimiz gibi koltuk doluluk oranı daha verimlidir.
+
+Yolcular ve şehir nüfusu
+Airport Bir havaalanını ziyaret eden yolcu sayısı ile o şehirdeki nüfus arasında bir ilişki var mı? Bu soruyu cevaplamak için, bu iki faktörü ilişkilendiren bir dağılım grafiği kullanıyoruz.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+Airports2 %>% filter(Passengers != 0) %>% mutate(Year = as.character(Year))  %>% group_by(Origin_airport, Year) %>% summarize(Passengers = round(mean(Passengers),2), Origin_Population =round(mean(Origin_population),2 )) %>%  ggplot(aes(x = Passengers, y = Origin_Population, color= Year)) + geom_point(alpha = 0.5) + scale_x_continuous(trans = "log10") + scale_y_continuous(trans = "log10") +xlab("Passengers") + ylab("City population") + ggtitle("Passengers versus City population")
+```
+
+```{r}
+library(plotly)
+Airports3 %>% filter(Passengers != 0) %>% mutate(Year = as.character(Year))  %>% group_by(Origin_airport, Year) %>% summarize(Passengers = round(mean(Passengers),2), Origin_Population =round(mean(Origin_population),2 )) %>%  ggplot(aes(x = Passengers, y = Origin_Population, color= Year)) + geom_point(alpha = 0.5) + scale_x_continuous(trans = "log10") + scale_y_continuous(trans = "log10") +xlab("Yolcular") + ylab("Sehir Nufusu") + ggtitle("Yolcular ve sehir nufusu")
+```
+Yolcular ve Şehir nüfusu arasında bir korelasyon olduğunu takdir edebiliriz: En büyük şehirlerde daha fazla yolcu vardır. Bu eğilimin görselleştirilmesini kolaylaştırmak için log ölçeği kullanılmıştır. Bununla birlikte, büyük şehirlerde küçük miktarda yolcu bulunan havaalanları olduğunu da görebiliriz. Bu etki sadece 2009'da gerçekleşir.
+
+Aylık uçuşlar
+Bir diğer ilginç gerçek, her ay gerçekleşen uçuşların miktarını tanımlamaktan ibarettir. Bu, yıl boyunca hava taşımacılığı endüstrisinin davranışını anlamamızı sağlar.
+
+
+```{r}
+Airports3<- mutate(Airports3,Month_n = month(Fly_date)) %>% mutate(Month =  month.abb[Month_n]) %>% mutate(Month = reorder(Month, Month_n))
+Airports3 %>% mutate(Year = as.character(Year))  %>% group_by(Month,Month_n, Year) %>% summarize(Flights = sum(Flights)) %>% ggplot(aes(x = Month, y = Flights, fill =Year))  + geom_bar(stat = "identity", position = "dodge" ) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ggtitle("Aylık ucuslar")
+```
+Uçuş talebinin açıkça en yüksek olduğu bir dönemi bulamıyoruz. Bununla birlikte, önceki bölümlerde gösterildiği gibi uçuşların 1990'dan 2009'a nasıl arttığını görebiliriz.
+
+ABD Havaalanları Haritası
+Son olarak, her havaalanını bir ABD haritasında görselleştiriyoruz. Noktaların alanı uçuş miktarı ile orantılıdır.
+
+```{r}
+library(sf)
+library(here)
+library("rnaturalearth")
+library("rnaturalearthdata")
+library(rgeos)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+map <- Airports3  %>% mutate(Year = as.character(Year)) %>% group_by(Origin_airport, Year) %>% summarize(Flights = mean(Flights, na.rm=TRUE), Lat = mean(Org_airport_lat,nan.rm=TRUE),Long = mean(Org_airport_long,nan.rm=TRUE) ) %>% na.omit()
+
+ggplot(data = world) + geom_sf() + geom_point(data = map,aes(y=Lat, x =Long, color = Year, size = Flights ),alpha = 0.5) +  coord_sf(xlim =  c(-130, -58), ylim = c(20, 55)) +  scale_size_area()
+
+```
+
+Şaşırtıcı bir şekilde, noktaların çoğu 1990'dan 2009'a kadar vakaların çoğunda artmadı (bazı durumlarda alan bile azaldı). 1990'dan 2009'a kadar olan uçuş sayısındaki artışın, 1990'dan sonra yaratılan havaalanı sayısındaki artıştan kaynaklandığı sonucuna varabiliriz.
+
+
+
+--------------------------------------------------------------------------------------
+Şehirlerin nüfusu havayollarını etkiler mi?
+Bu grafik, şehrin nüfusunu Turuncu çubuk olarak gösterirken, mavi çubuk bu şehirden geçen 2 yıl içinde giden yolcuları temsil etmektedir.
+
+```{r}
+temp1 <- Airports2[!duplicated(Airports2[,'Origin_city']),]
+temp1 <- aggregate(temp1$Origin_population, 
+                  by = list(temp1$Origin_code), sum)
+colnames(temp1)[2] <- 'Population'
+passenger_population <- aggregate(Airports2$Passengers, 
+                                  by = list(Airports2$Origin_code),
+                                  sum)
+passenger_population <- left_join(passenger_population, temp1, by = "Group.1")
+colnames(passenger_population)[2] <- 'Passengers'
+passenger_population$Group.1 <- factor(passenger_population$Group.1, levels = passenger_population$Group.1[order(passenger_population$Population)])
+
+plot_ly(passenger_population, x= ~Group.1, y= ~Passengers, type ='bar', name = 'Passengers') %>%
+  add_bars( y = ~Population, name = 'Population') %>%
+  layout(yaxis = list(title = 'Number of People', barmode = 'group'),
+         title = 'Origin_population vs Passengers boarded from Origin' )
+```
+
+Bu grafik sayesinde nüfusun uçağa binen yolcu sayısını etkilediğini görüyoruz. Delaware, Indiana ve West Virginia gibi bu trendi takip etmeyen bazı şehirler var.
+
+Havayolları için en iyi aylar
+Aylar ayrıca havayollarının kârını da belirler. Çoğu insan soğuk kışlar yerine oldukça güzel ve güneşli olduğunda seyahat etmeyi sever. Bu veri kümesinin aylar içinde hangi eğilimi gösterdiğini görelim.
+
+```{r}
+library(forecast)
+library(highcharter)
+library(lubridate)
+library(dplyr)
+Airports2$month <- months(Airports2$Fly_date)
+Airports2
+temp3 <- aggregate(Airports2$Flights, 
+                  by = list(factor(Airports2$month, levels= month.name),
+                            factor(year(Airports2$Fly_date))),sum)
+temp3<- ts(temp3$x, start = c(2008,1), end=c(2009,12), frequency = 12) 
+hchart(temp3, 
+       name = 'No. of flights') %>%
+  hc_add_theme(hc_theme_google()) %>% hc_title(text = 'Farklı aylardaki toplam uçuşlar')
+```
+
+```{r}
+#passengers in different months
+temp <- aggregate(Airports2$Passengers, 
+                  by = list(factor(Airports2$month, levels= month.name),
+                            year(Airports2$Fly_date)),
+                  sum)
+Passengers <- ts(temp$x, start = c(2008,1), end=c(2009,12), frequency = 12)
+hchart(Passengers) %>%
+  hc_add_theme(hc_theme_db()) %>% hc_title(text = 'Total Passengers in different months')
+```
+
+Bu iki farklı grafik, insanların kışlar yerine yaz aylarında seyahat etmeyi sevdiklerini gösteriyor. Yolcu sayısında ve uçuş sayısında Ocak ayında derin bir dalış görüyoruz, ancak havayolları Temmuz ayında en fazla kar ediyor.
+
+
+Bu Google haritaları mı?
+Veri kümesinde belirtilen farklı havaalanlarının yerini belirleyebilirsek gerçekten güzel olurdu. İşte buradasınız, ABD'deki tüm havaalanlarının coğrafi kodlarını öğrendim ve sonra sadece bu verilerde bulunanları seçtim. Bu bilgiyi bu haritada sunmak için plotly kütüphanesini kullandım.
+
+
+
+```{r}
+library(plotly)
+locations <- read_csv("locations-of-airports/Locations.csv")
+locations$Longitude <- as.numeric(locations$Longitude)
+locations$Latitude <- as.numeric(locations$Latitude)
+
+temp <- data_frame(Address = unique(Airports2$Destination_airport))
+locations <- right_join(locations, temp, by = 'Address')
+
+plot_geo() %>%
+  add_markers(x = ~locations$Longitude, y = ~locations$Latitude, size = locations$x,
+              alpha = 0.7) %>%
+   layout(geo = list(
+    scope = 'north america', showland = TRUE, landcolor = toRGB("gray95")
+    
+  ),title = 'Locations of the Airports') 
+```
+
+Onur listesi
+Bu veriler, haritada gösterilecek çok sayıda yaklaşık 19.000 farklı uçuş içeriyor. Öyleyse yolcular arasında bir hit olan ilk 15 uçuşa geri sayım. Bu uçuşlar 2 yıl içinde çoğu yolcu taşımaktadır.
+
+```{r}
+#Top 10 Flights on map
+temp6 <- aggregate(Airports2$Passengers,
+                  by = list(Airports2$Origin_airport,Airports2$Destination_airport),
+                  sum) %>% arrange(desc(x))
+
+
+
+topflights <- head(temp6, n = 30L)
+index <- NA
+for(i in 1:30){
+  for(j in i:30)
+  if(topflights$Group.1[i] ==topflights$Group.2[j] & topflights$Group.2[i] == topflights$Group.1[j]){
+    index <- c(index,i+1)
+  }
+}
+
+topflights <- topflights[-index[-1],]
+
+topflights <- left_join(topflights,
+                        read_csv("locations-of-airports/Locations.csv", col_names = c('Group.1',
+                                                                'Origin_Latitude',
+                                                                'Origin_Longitude')),
+                        by = 'Group.1')
+
+topflights <- left_join(topflights,
+                        read_csv("locations-of-airports/Locations.csv", col_names = c('Group.2',
+                                                                'Destination_Latitude',
+                                                                'Destination_Longitude')),
+                        by = 'Group.2')
+
+
+
+plot_geo(locationmode = 'USA-states', sizes = c(100,250)) %>%
+  add_markers(x = ~topflights$Origin_Longitude,y = ~topflights$Origin_Latitude,
+              size = ~topflights$x, 
+              text = ~paste(topflights$Group.1,'<br />',topflights$x/1e6,' million Passengers')) %>%
+  add_markers(x = ~topflights$Destination_Longitude, y =~topflights$Destination_Latitude,
+              size = ~topflights$x, 
+              text = ~paste(topflights$Group.2,'<br />',topflights$x/1e6,' million Passengers')) %>%
+  add_segments(x = ~topflights$Origin_Longitude, xend= ~topflights$Destination_Longitude,
+               y = ~topflights$Origin_Latitude, yend = ~topflights$Destination_Latitude,
+               color = ~topflights$Group.1
+              ) %>%
+  layout(geo = list(
+    scope = 'usa', showland = TRUE, landcolor = toRGB("gray95")
+    
+  ),title = 'Top 15 flights (In terms of Passengers)') 
+```
+
+
+Yolcu seçimi ödülü Los Angeles Havalimanı'ndan San Francisco Uluslararası Havalimanı'na uçuşa gidiyor. Son 2 yılda yaklaşık 2,9 milyon yolcu taşıdı. Ardından 2,7 milyon yolcu ile Orlando Havaalanı'ndan Hartsfield – Jackson Atlanta Uluslararası Havaalanı'na uçuş.
+
+Utanç Salonu
+Bu 2 yıl boyunca tüm uçuşlar en iyisi değildi. Bazıları çok acı çekti. Bunlar, son 2 yılda en az yolcu taşıyan uçuşlar.
+
+
+```{r}
+#LAST 10 flights on map
+
+temp5 <- aggregate(Airports2$Passengers,
+                  by = list(Airports2$Origin_airport,Airports2$Destination_airport),
+                  sum) %>% arrange(desc(x))
+
+
+
+lastflights <- tail(temp, n = 15L)
+
+lastflights <- left_join(lastflights,
+                        read_csv("locations-of-airports/Locations.csv", col_names = c('Group.1',
+                                                                'Origin_Latitude',
+                                                                'Origin_Longitude')),
+                        by = 'Group.1')
+
+lastflights <- left_join(lastflights,
+                        read_csv("locations-of-airports/Locations.csv", col_names = c('Group.2',
+                                                                'Destination_Latitude',
+                                                                'Destination_Longitude')),
+                        by = 'Group.2')
+
+
+
+plot_geo(sizes = c(1,30)) %>%
+  add_markers(x = ~lastflights$Origin_Longitude,y = ~lastflights$Origin_Latitude,
+              size = ~lastflights$x, 
+              text = ~paste(lastflights$Group.1,'<br />',lastflights$x/1e6,' Passengers')) %>%
+  add_markers(x = ~lastflights$Destination_Longitude, y = ~lastflights$Destination_Latitude,
+              size = ~lastflights$x, 
+              text = ~paste(lastflights$Group.1,'<br />',lastflights$x/1e6,' Passengers')) %>%
+  add_segments(x = ~lastflights$Origin_Longitude, xend= ~lastflights$Destination_Longitude,
+               y = ~lastflights$Origin_Latitude, yend = ~lastflights$Destination_Latitude,
+               color = ~lastflights$Group.1
+  ) %>%
+  layout(geo = list(
+    scope = 'north america',
+    showland = TRUE, landcolor = toRGB("gray95"), showframe = FALSE
+  ),title = 'Last 15 flights (In terms of Passengers)')
+```
+
+Bu uçuşların hepsi son iki yılda 0 yolcu taşıdı. Çoğu Youngstown – Warren Bölge Havalimanı'na gitmiş ve bu da onu bu veri setinde en az tercih edilen havaalanı haline getirmiştir.
+
+Yolcular ve Koltuklar
+Bu kadar yolcu için yeterli koltuk var mı?
+
+```{r}
+#Passengers to seat ratio
+library(lubridate)
+library(tidyverse)
+
+temp3 <- aggregate(Airports2$Passengers, 
+                  by=list(factor(Airports2$month, levels = month.name),
+                          year(Airports2$Fly_date)), sum)
+temp4 <- aggregate(Airports2$Seats, 
+                  by= list(factor(Airports2$month, levels = month.name),
+                           year(Airports2$Fly_date)), sum)
+Passengers<- ts(temp3$x, start = c(2008,1),end = c(2009,12), frequency = 12)
+Seats <- ts(temp4$x, start=c(2008,1),end = c(2009,12), frequency = 12)
+hchart(cbind(Passengers,Seats)) %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_title(text = 'Passengers vs Seats in Specific month ( Hover for more info)')
+```
+
+
+
+Uçuşlarda Yolcu Sayısı ve Mevcut koltuklar arasında büyük bir fark olduğu ortaya çıktı. Hatta çoğu boş seyahat ediyor.
+
+Temmuz 2008'in en yoğun ayında uçuşlarda yaklaşık 13 milyon boş koltuk vardı.
+
+Ocak 2008'de boş sandalye sayısı 20 milyon + idi.
+
+Çok karlı olmayan uçuşlar
+Bu uçuşlar yolcuların kendisinden daha fazla bagaj taşıdı. Bu uçuşlar bu veri setinde en yüksek boş koltuk sayısına sahiptir.
+
+```{r}
+#most empty flights in USA
+Airports2$left_seats <- Airports2$Seats - Airports2$Passengers
+temp2 <- aggregate(Airports2$left_seats, 
+                  by= list(Airports2$Origin_airport,
+                           Airports2$Destination_airport),max) %>% arrange(desc(x))
+
+colnames(temp2) <- c('Origin_airport','Destination_airport','left_seats')
+temp2 <- left_join(temp2, Airports2, by = c('Origin_airport','Destination_airport','left_seats'))
+temp2$left_seats <- temp2$left_seats/temp2$Flights
+index <- NA
+topemptyflights <- head(temp2, n = 30L)
+for(i in 1:30){
+  for(j in i:30)
+    if(topemptyflights$Origin_airport[i] == topemptyflights$Destination_airport[j] & topemptyflights$Origin_airport[j] == topemptyflights$Destination_airport[i]){
+      index <- c(index,i+1)
+    }
+}
+
+topemptyflights <- topemptyflights[-index[-1],]
+
+
+topemptyflights <- left_join(topemptyflights,
+                         read_csv("locations-of-airports/Locations.csv", col_names = c('Origin_airport',
+                                                                 'Origin_Latitude',
+                                                                 'Origin_Longitude')),
+                         by = 'Origin_airport')
+
+topemptyflights <- left_join(topemptyflights,
+                         read_csv("locations-of-airports/Locations.csv", col_names = c('Destination_airport',
+                                                                 'Destination_Latitude',
+                                                                 'Destination_Longitude')),
+                         by = 'Destination_airport')
+
+
+
+plot_geo(sizes = c(1,250)) %>%
+  add_markers(x = ~topemptyflights$Origin_Longitude,y = ~topemptyflights$Origin_Latitude,
+              size = ~topemptyflights$left_seats, 
+              text = ~paste(
+                topemptyflights$Origin_airport,
+                '<br />',
+                format(round(topemptyflights$left_seats,2), nsmall = 2),
+                ' empty seats per flight','<br />',
+                topemptyflights$Flights, ' flights')) %>%
+  add_markers(x = ~topemptyflights$Destination_Longitude, y = ~topemptyflights$Destination_Latitude,
+              size = ~topemptyflights$left_seats, 
+              text = ~paste(
+                topemptyflights$Destination_airport,
+                '<br />',
+                format(round(topemptyflights$left_seats,2), nsmall = 2),
+                ' empty seats per flight', '<br />',
+                topemptyflights$Flights, ' flights')) %>%
+  add_segments(x = ~topemptyflights$Origin_Longitude, xend= ~topemptyflights$Destination_Longitude,
+               y = ~topemptyflights$Origin_Latitude, yend = ~topemptyflights$Destination_Latitude,
+               color = ~topemptyflights$Origin_airport
+  ) %>%
+  layout(geo = list(
+    scope = 'north america',
+    showland = TRUE, landcolor = toRGB("gray95"),showframe = FALSE
+  ),title = 'Top empty flights (Hover for more Info)'
+  )
+
+```
+
+
+Longest Uçak Bileti
+Bu uçuşlar diğerlerinin arasında en büyük mesafeleri kat eder. Çoğu Hawaii'de bulunan Honolulu Uluslararası Havaalanı'na gidiyor.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+temp <- aggregate(Airports2$Distance, by = list(Airports2$Origin_airport,Airports2$Destination_airport)
+,max) %>% arrange(desc(x))
+longflights <- head(temp, 15L)
+
+longflights <- left_join(longflights,read_csv("locations-of-airports/Locations.csv", col_names = c('Group.1','Origin_Latitude','Origin_Longitude')),by = 'Group.1')
+
+longflights <- left_join(longflights,read_csv("locations-of-airports/Locations.csv", col_names = c('Group.2','Destination_Latitude','Destination_Longitude')),by = 'Group.2')
+
+
+
+plot_geo(sizes = c(1,250)) %>%
+  add_markers(x = ~longflights$Origin_Longitude,y = ~longflights$Origin_Latitude,
+              size = ~longflights$x, 
+              text = ~paste(longflights$Group.1,'<br />',longflights$x,' miles')) %>%
+  add_markers(x = ~longflights$Destination_Longitude, y = ~longflights$Destination_Latitude,
+              size = ~longflights$x, 
+              text = ~paste(longflights$Group.1,'<br />',longflights$x,' miles')) %>%
+  add_segments(x = ~longflights$Origin_Longitude, xend= ~longflights$Destination_Longitude,
+               y = ~longflights$Origin_Latitude, yend = ~longflights$Destination_Latitude,
+               color = ~longflights$Group.1
+  ) %>%
+  layout(geo = list(
+    scope = 'north america',
+    showland = TRUE, landcolor = toRGB("gray95"),showframe = FALSE
+  ),title = 'Longest Flights (In terms of Distance)'
+  )
+```
+
+
+En Uzun Uçuşlar (Mesafe Açısından) Mesafe Yolcuları Etkiler mi?
+
+
+```{r}
+library(plotly)
+library(ggplot2)
+library(tidyverse)
+temp1 <- aggregate(Airports2$Passengers,by = list(Airports2$Distance,Airports2$Origin_airport,Airports2$Destination_airport),sum) %>% arrange(desc(Group.1))
+colnames(temp1) <- c("Distance",'Origin_airport', 'Destination_airport', 
+                    'Passengers')
+temp1 <- sample_n(temp1,8000)
+
+plot_ly(temp1, x =~Distance, y =~Passengers, type = 'scatter',color = ~Distance,
+        text = ~paste('Distance :',temp1$Distance,'<br />',
+                      'Passengers :',temp1$Passengers)) %>% hide_colorbar()
+```
+
+Mesafenin Açıkça Etkisi Yolcu uçuşlarına etki eder.
+
+------------------------------------------------------------------------------
+ 
+```{r}
+library(dplyr)
+miamiverisi<-filter(Airports2,Origin_airport=="MIA")
+miamiverisi
+
+```
+
+
+```{r}
+library(dplyr)
+library(lubridate)
+miamizamanverisi<-miamiverisi  %>%
+          dplyr::mutate(year = lubridate::year(Fly_date), 
+                month = lubridate::month(Fly_date), 
+                day = lubridate::day(Fly_date))
+miamizamanverisi
+```
+
+
+```{r}
+library(plotly)
+b<-miamizamanverisi %>%
+    group_by(Origin_airport, year) %>%
+    summarise(Passengers=median(Passengers)) %>%
+    ggplot(aes(x=year, y=Passengers, color=Origin_airport)) +
+     geom_line(size=1) + 
+     geom_point(size=1.5)
+ggplotly(b)
+```
+
+Miami den kalan ucuslarin yillara gore yolcu sayisini bize  g?stermektedir. Ucuslarda en fazla yolcu sayisi 1999 da 2360 yolcu ile ger?ekle?tirilmi?tir. Daha sonra yolcu sayisi azalmistir. En az ucus 2007 yilinda 187 yolcu ile yapilmistir. Burada yolcu say?s? o y?l?n medyan degerlerine gore al?nmistir. 
+
+
+```{r}
+library(plotly)
+g <- crosstalk::SharedData$new(miamizamanverisi, ~ Origin_airport)
+gg <- ggplot(g, aes(Passengers, Seats, color = Destination_city, frame = year)) +
+  geom_point(aes(size = Destination_population, ids = Destination_city)) +
+  
+  scale_x_log10()
+ggplotly(gg) 
+```
+
+
+yolcu sayisi ile ucaktaki koltuk sayilarini karsilastirdik. 1996 yilindan sonra yolcu sayisi artmaya baslamistir. Genelde en fazla yolcu sayisi Orlando. New York, Los Angeles ,Chicago ,Boston gibi sehirlere yapilmistir.
+
+
+```{r}
+
+g <- crosstalk::SharedData$new(miamizamanverisi, ~ Origin_airport)
+
+ga<-ggplot(g,
+          aes(x=Origin_population, y=Passengers , size=Destination_population , color=Destination_airport,
+              frame=year))+
+  geom_point()+
+  scale_x_log10()
+ggplotly(ga)%>%
+  highlight("plotly_hover")
+
+```
+
+
+
+bu grafikte yillara gore Miami sehirini nufusunu arttigini goruyoruz. Ayni sekilde yillar gectikce yolcu sayisi da artmaktadir. Genel de  fazla yolcu sayisi sehri nufusu 8 milyon ve ustu olan sehirlerde en fazla yolcu sayisi gorulmektedir.
+
+
+
+
+```{r}
+
+c<-ggplot(miamizamanverisi,
+          aes(x=Flights, y=Seats, size=Destination_population, color=Destination_city,
+              frame= year))+
+  geom_point()+
+  scale_x_log10()
+ggplotly(c)
+
+```
+
+ucus sayısına gore koltuk doluluk oranlarini grafigini gostermektedir.  koltuk doluluk oranları fazla olan sehirlerde genelde ucus sayisi fazladir. 
+
+```{r}
+
+ library(ggplot2)
+library(gganimate)
+ 
+
+a<-ggplot(miamizamanverisi, aes(Flights, Distance, size = Seats, color = Seats)) +
+  geom_point() +
+  scale_x_log10() +
+  theme_bw() +
+  labs(title = 'Year: {frame_time}', x = 'ucus sayisi', y = 'uculan mil') +
+  transition_time(year) +
+  ease_aes('linear')
+animate(a, fps = 1, width = 750, height = 480)
+```
+
+
+```{r}
+b<-ggplot(miamizamanverisi, aes(Seats , Passengers , size = Flights, color = Flights)) +
+  geom_point() +
+  scale_x_log10() +
+  theme_bw() +
+  labs(title = 'Year: {frame_time}', x = 'koltuk sayisi', y = 'yolcu sayisi') +
+  transition_time(year) +
+  ease_aes('linear')
+animate(b, fps = 1, width = 750, height = 480)
+
+```
+
+
+
+
+
+KAYNAKÇA
+
+
+```{r}
+citation("tidyverse")
+citation("dplyr")
+citation("lubridate")
+citation("ggplot2")
+citation("plotly")
+citation("forecast")
+citation("ggmap")
+citation("rnaturalearth")
+citation("rnaturalearthdata")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
